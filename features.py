@@ -11,21 +11,29 @@ Usage (live token prediction):
     feat = extract_features(pair_id, token_id, token_index)
 """
 
+import os
 import time
 import requests
 import json
 from math import sqrt
 from decimal import Decimal
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 import re
 
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-THEGRAPH_URL = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v2"
-ETHPLORER_API_KEY = "EK-4L18F-Y2jC1b7-9qC3N"   # replace with your own key
+THEGRAPH_API_KEY  = os.getenv("THEGRAPH_API_KEY")
+THEGRAPH_URL = (
+    f"https://gateway.thegraph.com/api/{THEGRAPH_API_KEY}"
+    "/subgraphs/id/A3Np3RQbaBA6oKJgiwDJeo5T3zrYfGHPWFYayMwtNDum"
+)
+ETHPLORER_API_KEY  = os.getenv("ETHPLORER_API_KEY")
+ETHERSCAN_API_KEY  = os.getenv("ETHERSCAN_API_KEY", "")
 
 # Addresses considered "burned" for token burn ratio calculation
 BURN_ADDRESSES = {
@@ -214,6 +222,33 @@ def _get_creator(pair_id: str, token_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Etherscan helpers
+# ---------------------------------------------------------------------------
+
+def _count_tokens_created(creator: str) -> int:
+    """
+    Count the number of contracts this creator address has deployed on Ethereum.
+    Contract creation transactions have an empty 'to' field in Etherscan's txlist.
+    Falls back to 1 on any error so the rest of feature extraction is not blocked.
+    """
+    url = (
+        "https://api.etherscan.io/v2/api"
+        f"?chainid=1&module=account&action=txlist"
+        f"&address={creator}"
+        f"&startblock=0&endblock=99999999"
+        f"&sort=asc&apikey={ETHERSCAN_API_KEY}"
+    )
+    try:
+        resp = requests.get(url, timeout=20).json()
+        if resp.get("status") != "1":
+            return 1
+        count = sum(1 for tx in resp["result"] if tx.get("to") == "")
+        return max(count, 1)
+    except Exception:
+        return 1
+
+
+# ---------------------------------------------------------------------------
 # Individual feature computations
 # ---------------------------------------------------------------------------
 
@@ -348,7 +383,7 @@ def extract_features(pair_id: str, token_id: str, eth_index: int) -> dict:
         "lp_lock_ratio": lp_lock,
         "token_burn_ratio": token_burn,
         "token_creator_holding_ratio": token_creator,
-        "number_of_token_creation_of_creator": 1,  # requires separate lookup
+        "number_of_token_creation_of_creator": _count_tokens_created(creator),
     }
 
 

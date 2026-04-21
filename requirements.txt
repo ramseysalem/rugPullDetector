@@ -7,3 +7,4 @@ matplotlib>=3.5
 seaborn>=0.12
 requests>=2.27
 beautifulsoup4>=4.10
+python-dotenv>=1.0
